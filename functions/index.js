@@ -44,10 +44,10 @@ exports.identificaLixo = onRequest(async (request, response) => {
 
     try {
         // Simulação de análise de imagem pela OpenAI. Substitua isso pela sua implementação real.
-        const openaiResponse = await analyzeImageWithOpenAI(imageUrl, request.body.from);
-        activateStudio(request.body.to, request.body.from, openaiResponse)
+        const aiResponse = await analyzeImageWithOpenAI(imageUrl, request.body.from);
+        activateStudio(request.body.to, request.body.from, aiResponse)
 
-        response.status(200).send(JSON.stringify(openaiResponse));
+        response.status(200).send(JSON.stringify(aiResponse));
     } catch (error) {
         logger.error('Erro ao processar a imagem', error);
         response.status(500).send('Erro interno');
@@ -98,13 +98,14 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
       ],
     });
   
-    const response = openaiResponse.choices[0].message.content.split('```json').join('').split('```').join('')
+    const response = openAIResponse.choices[0].message.content.split('```json').join('').split('```').join('')
     // Assumindo que a resposta da OpenAI vem no formato esperado, você pode precisar fazer um parse adicional
     // dependendo de como a informação é formatada na resposta.
     console.log(response);
 
     await admin.firestore().collection('logs').add({
-        response,
+        messageResponse: openAIResponse.choices[0].message,
+        response: JSON.parse(response),
         from,
         imageUrl
     });
