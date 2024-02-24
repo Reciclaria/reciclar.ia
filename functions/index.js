@@ -114,3 +114,23 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
     // Isso pode envolver converter a string JSON em um objeto JavaScript para facilitar o manuseio.
     return JSON.parse(response);
   }
+
+exports.importaPontosColeta = onRequest(async (request, response) => {
+    // Ler o arquivo JSON com os dados a serem importados
+    const dados = require('./data/pontosColeta.json');
+    
+    const promises = [];
+    
+    dados.forEach(ponto => {
+        const promise = admin.firestore().collection('pontosColeta').add(ponto);
+        promises.push(promise);
+    });
+
+    try {
+        await Promise.all(promises);
+        response.status(200).send("Dados importados com sucesso para a coleção pontosColeta.");
+    } catch (error) {
+        console.error("Erro ao importar dados: ", error);
+        response.status(500).send("Erro ao importar dados para a coleção pontosColeta.");
+    }
+});
