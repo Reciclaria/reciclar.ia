@@ -44,7 +44,7 @@ exports.identificaLixo = onRequest(async (request, response) => {
 
     try {
         // Simulação de análise de imagem pela OpenAI. Substitua isso pela sua implementação real.
-        const openaiResponse = await analyzeImageWithOpenAI(imageUrl);
+        const openaiResponse = await analyzeImageWithOpenAI(imageUrl, request.body.from);
         activateStudio(request.body.to, request.body.from, openaiResponse)
 
         response.status(200).send(JSON.stringify(openaiResponse));
@@ -54,7 +54,7 @@ exports.identificaLixo = onRequest(async (request, response) => {
     }
 });
 
-const getFirestorePrompt = async () => {
+const getFirestorePrompt = async () => {    
     const settings = await admin.firestore().collection('settings').doc('default').get();
     if (settings.exists) {
         settingsData = await settings.data();
@@ -78,7 +78,7 @@ const getFirestorePrompt = async () => {
     `;
 }
 
-async function analyzeImageWithOpenAI(imageUrl) {
+async function analyzeImageWithOpenAI(imageUrl,from) {
     const response = await openai.chat.completions.create({
       model: "gpt-4-vision-preview",
       max_tokens: 2000,
@@ -101,6 +101,12 @@ async function analyzeImageWithOpenAI(imageUrl) {
     // Assumindo que a resposta da OpenAI vem no formato esperado, você pode precisar fazer um parse adicional
     // dependendo de como a informação é formatada na resposta.
     console.log(response.choices[0].message.content);
+
+    await admin.firestore().collection('logs').add({
+        response: response.choices[0],
+        from,
+        imageUrl
+    });
   
     // Aqui você retornaria a resposta processada conforme necessário para seu uso.
     // Isso pode envolver converter a string JSON em um objeto JavaScript para facilitar o manuseio.
