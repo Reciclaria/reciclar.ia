@@ -79,7 +79,7 @@ const getFirestorePrompt = async () => {
 }
 
 async function analyzeImageWithOpenAI(imageUrl,from) {
-    const response = await openai.chat.completions.create({
+    const openAIResponse = await openai.chat.completions.create({
       model: "gpt-4-vision-preview",
       max_tokens: 2000,
       messages: [
@@ -98,17 +98,18 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
       ],
     });
   
+    const response = openaiResponse.choices[0].message.content.split('```json').join('').split('```').join('')
     // Assumindo que a resposta da OpenAI vem no formato esperado, você pode precisar fazer um parse adicional
     // dependendo de como a informação é formatada na resposta.
-    console.log(response.choices[0].message.content);
+    console.log(response);
 
     await admin.firestore().collection('logs').add({
-        response: response.choices[0],
+        response,
         from,
         imageUrl
     });
   
     // Aqui você retornaria a resposta processada conforme necessário para seu uso.
     // Isso pode envolver converter a string JSON em um objeto JavaScript para facilitar o manuseio.
-    return JSON.parse(response.choices[0].message.content);
+    return JSON.parse(response);
   }
