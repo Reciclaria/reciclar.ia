@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Climathon 2024</title>
+    <style>
+        input {
+            font-size: 2em;
+            min-width: 50%;
+            padding: .2em;
+            margin: .5em;
+        }
+    </style>
+</head>
+<body>
+
+    <!--
+
+        StreetView Request: https://developers.google.com/maps/documentation/streetview/request-streetview
+        Metadados StreetView: https://developers.google.com/maps/documentation/streetview/metadata
+        Geocoding Service: https://developers.google.com/maps/documentation/javascript/geocoding
+
+        StreetView JavascriptSDK: https://console.cloud.google.com/google/maps-apis/discover/street-view?project=climathon2024
+        
+
+    -->
+
+
+    <input type="text" name="pac-input" id="pac-input" />
+    <div id="view"></div>
+
+    <script async
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAoZ4LsN_MtLtxd64R_AA4b8DvfT5UA8XA&loading=async&libraries=places,geocoder&callback=initMap">
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+
+    <script type="module">
+
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        // TODO: Add SDKs for Firebase products that you want to use
+        // https://firebase.google.com/docs/web/setup#available-libraries
+      
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+          apiKey: "AIzaSyAoZ4LsN_MtLtxd64R_AA4b8DvfT5UA8XA",
+          authDomain: "climathon2024.firebaseapp.com",
+          projectId: "climathon2024",
+          storageBucket: "climathon2024.appspot.com",
+          messagingSenderId: "509985921179",
+          appId: "1:509985921179:web:91046fa5ae3ebdb5b18e3e"
+        };
+      
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+    </script>
+    <script>
+        const FOV = 110;
+        const PITCH = 0;
+        const RADIUS = 150; //radius
+        const SOURCE = 'outdoor'; //default ou outdoor
+
+        const HEADINGS = [
+            0, 90, 180, 270
+        ]
+
+        function getElevation(lat,lng) {
+            // https://maps.googleapis.com/maps/api/elevation/json
+            // ?locations=39.7391536%2C-104.9847034
+            // &key=YOUR_API_KEY
+
+        }
+
+        function codeAddress(address) {
+            geocoder.geocode( { 'address': address}, function(results, status) {
+            if (status == 'OK') {
+                console.log('location', results[0].geometry.location);
+                // generateStreetView(results[0].geometry);
+                generateStreetView(results[0].geometry.location.lat(), results[0].geometry.location.lng());
+            } else {
+                alert('Geocode was not successful for the following reason: ' + status);
+            }
+            });
+        }
+
+        async function generateStreetView(lat, lng) {
+            const streetViewResult = document.getElementById("view");
+            streetViewResult.innerHTML = "";
+
+            // Verificar se tem dados de SV para esta localização
+            const checkStreetViewAvailable = `https://maps.googleapis.com/maps/api/streetview/metadata?location=${lat},${lng}
+&key=AIzaSyAoZ4LsN_MtLtxd64R_AA4b8DvfT5UA8XA`;
+
+            const svAvailable = await axios.get(checkStreetViewAvailable)
+                .then(function (response) {
+                    console.log('LINK:', checkStreetViewAvailable);
+                    // handle success
+                    // console.log('sv available', response);
+                    return response.data;
+                })
+                .catch(function (error) {
+                    // handle error
+                    console.log(error);
+                    return null;
+                })
+
+            // console.log('svAvailable', svAvailable);
+            if (!svAvailable || svAvailable.status == 'ZERO_RESULTS') {
+                alert('Este endereço não possui imagem');
+                return;
+            }
+
+            // Carregar imagens do Street View
+            const urlStreetView = `https://maps.googleapis.com/maps/api/streetview?size=2400x2400&location=${lat},${lng}
+&fov=${FOV}&heading=[HEADING]&pitch=${PITCH}&radius=${RADIUS}&source=${SOURCE}&key=AIzaSyAoZ4LsN_MtLtxd64R_AA4b8DvfT5UA8XA`;
+
+            for (heading of HEADINGS) {
+                console.log('heading', heading);
+
+                const img = document.createElement('img');
+                img.src = urlStreetView.split('[HEADING]').join(heading);
+                streetViewResult.appendChild(img);
+
+                console.log('url', urlStreetView);
+            }
+        }
+
+        var geocoder;
+
+        function initMap() {
+            geocoder = new google.maps.Geocoder();
+
+            // const map = new google.maps.Map(document.getElementById("map"), {
+            //     center: { lat: 50.064192, lng: -130.605469 },
+            //     zoom: 3,
+            // });
+
+
+            // const center = { lat: 50.064192, lng: -130.605469 };
+            // // Create a bounding box with sides ~10km away from the center point
+            // const defaultBounds = {
+            //     north: center.lat + 0.1,
+            //     south: center.lat - 0.1,
+            //     east: center.lng + 0.1,
+            //     west: center.lng - 0.1,
+            // };
+
+
+            const input = document.getElementById("pac-input");
+            const options = {
+                // bounds: defaultBounds,
+                componentRestrictions: { country: "br" },
+                fields: ["address_components", "geometry", "icon", "name"],
+                strictBounds: false,
+            };
+            const autocomplete = new google.maps.places.Autocomplete(input, options);
+
+            // Set initial restriction to the greater list of countries.
+            autocomplete.setComponentRestrictions({
+                country: ["br"],
+            });
+
+            // const southwest = { lat: 5.6108, lng: 136.589326 };
+            // const northeast = { lat: 61.179287, lng: 2.64325 };
+            // const newBounds = new google.maps.LatLngBounds(southwest, northeast);
+            // autocomplete.setBounds(newBounds);
+
+
+            autocomplete.addListener("place_changed", () => {
+                // infowindow.close();
+                // marker.setVisible(false);
+
+                const place = autocomplete.getPlace();
+                console.log('new place', place);
+
+                if (!place.geometry || !place.geometry.location) {
+                    // User entered the name of a Place that was not suggested and
+                    // pressed the Enter key, or the Place Details request failed.
+                    // window.alert("No details available for input: '" + place.name + "'");
+                    // TODO: usar geocoding API
+                    codeAddress(input.value)
+                    return;
+                }
+
+                console.log('location', place.geometry.location);
+
+                generateStreetView(place.geometry.location.lat(), place.geometry.location.lng());
+
+                // latLong = [place.geometry.location.lat(), place.geometry.location.lon()
+
+                // const urlStreetView = `https://maps.googleapis.com/maps/api/streetview?size=400x400&location=47.5763831,-122.4211769
+                // &fov=80&heading=70&pitch=0&key=AIzaSyAoZ4LsN_MtLtxd64R_AA4b8DvfT5UA8XA&signature=YOUR_SIGNATURE`
+                
+                // // If the place has a geometry, then present it on a map.
+                // if (place.geometry.viewport) {
+                //     map.fitBounds(place.geometry.viewport);
+                // } else {
+                //     map.setCenter(place.geometry.location);
+                //     map.setZoom(17); // Why 17? Because it looks good.
+                // }
+
+                // marker.setPosition(place.geometry.location);
+                // marker.setVisible(true);
+
+                let address = "";
+                if (place.address_components) {
+                    address = [
+                        (place.address_components[0] &&
+                        place.address_components[0].short_name) ||
+                        "",
+                        (place.address_components[1] &&
+                        place.address_components[1].short_name) ||
+                        "",
+                        (place.address_components[2] &&
+                        place.address_components[2].short_name) ||
+                        "",
+                    ].join(" ");
+                }
+
+                console.log('address', address);
+
+            });
+
+        }
+
+        window.initMap = initMap;
+
+    </script>
+</body>
+</html>
