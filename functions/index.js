@@ -11,6 +11,8 @@ const OPENAI_API_KEY = defineString('OPENAI_API_KEY');
 const TWILIO_ACCOUNT_SID = defineString('TWILIO_ACCOUNT_SID');
 const TWILIO_AUTH_TOKEN = defineString('TWILIO_AUTH_TOKEN');
 const TWILIO_STUDIO_FLOW_SID = defineString('TWILIO_STUDIO_FLOW_SID');
+const TWILIO_MESSAGE_SERVICE_SID = defineString('TWILIO_MESSAGE_SERVICE_SID');
+
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() });
 
@@ -19,11 +21,13 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() });
 const activateStudio = async (to, from, json) => {
     const client = require('twilio')(TWILIO_ACCOUNT_SID.value(), TWILIO_AUTH_TOKEN.value());
 
+    logger.info(`activateStudio: executando via ${TWILIO_MESSAGE_SERVICE_SID.value()}`);
+
     client.studio.v2.flows(TWILIO_STUDIO_FLOW_SID.value())
     .executions
     .create({
         to, 
-        from,
+        from: TWILIO_MESSAGE_SERVICE_SID.value(),
         parameters: {
             json
         }
@@ -81,17 +85,26 @@ exports.importaPontosColeta = onRequest(async (request, response) => {
 
 exports.listaEcopontos = onRequest(async (request, response) => {
 
+    // TODO: parametro de filtro "request.body.filtro"
+    // TODO: caso venha sem parâmetro filtar os que tem 
+
     const geofire = require('geofire-common');
     let center = [];
-    const radiusInM = 5 * 1000; 
+    let radiusInM = 5 * 1000; 
 
     if (request.body.lat && request.body.lng) {
         center = [ parseFloat(request.body.lat), parseFloat(request.body.lng) ];
         logger.info('listaEcopontos', center);
-
     } else {
         // TODO: fazer geolocation do texto
+    }
 
+    let tipos = null;
+    if (request.body.filtro) {
+        tipos = request.body.filtro.toLowerCase().split(', ');
+        // if (tipos.includes('Entulhos')) {
+        //     radiusInM = 10 * 1000; 
+        // }
     }
 
 
@@ -104,13 +117,6 @@ exports.listaEcopontos = onRequest(async (request, response) => {
             .collection('pontosColeta')
             .orderBy('geohash')
             .startAt(b[0]).endAt(b[1]);
-
-        // const q = query(
-        //     collection(admin.firestore(), 'pontosColeta'), 
-        //     orderBy('geohash'), 
-        //     startAt(b[0]), 
-        //     endAt(b[1]));
-
 
         promises.push(q.get());
     }
@@ -140,8 +146,28 @@ exports.listaEcopontos = onRequest(async (request, response) => {
     }
 
     // TODO: fazer sort por distanceInM
-    const ecopontos = matchingDocs
-        .sort((current, next) => current.distanceInM - next.distanceInM);
+    let ecopontos = matchingDocs;
+
+    ecopontos = ecopontos.sort((current, next) => current.distanceInM - next.distanceInM);
+    logger.info('ECOPONTOS GERAL SORTED', ecopontos);
+
+    if (tipos) {
+        // const tipos = request.body.filtro.toLowerCase().split(', ');
+        logger.info('TIPOS ENCONTRADOS', tipos);
+
+        // Filtrar locais
+        ecopontos = ecopontos.filter(function(e) {
+            return e.itens_recebidos.some(function(item) {
+                return tipos.includes(item);
+            });
+        });
+    } else {
+        // categoria padrão precisa listar pelo menos 3 tipos de itens recebidos
+        ecopontos = ecopontos.filter( e => e.itens_recebidos.length >= 3 );
+        logger.info('ECOPONTOS 3 TIPOS', ecopontos);
+
+    }
+
 
     if (ecopontos.length > 0) {
         const ecoponto = ecopontos[0]
@@ -149,7 +175,7 @@ exports.listaEcopontos = onRequest(async (request, response) => {
         logger.info('RESULTADO GEOHASH', ecopontos);
 
         response.contentType('application/json').status(200).send(JSON.stringify({
-            mensagem: `Encontrei o seguinte ecoponto próximo de você:\n\n*${ecoponto.nome}*\n\n${ecoponto.endereco}\nCep: ${ecoponto.cep}\n${ecoponto.distanceInM.toFixed(0)} metro(s) de você.\n\nTelefone: ${ecoponto.telefone}\nHorário de Funcionamento: ${ecoponto.horario_funcionamento}.\n\nItens aceitos: ${ecoponto.itens_recebidos.join(', ')}`,
+            mensagem: `Encontrei o seguinte ecoponto próximo de você:\n\n*${ecoponto.nome}*\n\n${ecoponto.endereco}\nCep: ${ecoponto.cep}\n\n*${ecoponto.distanceInM.toFixed(0)} metro(s) de você.*\n\nTelefone: ${ecoponto.telefone}\nHorário de Funcionamento: ${ecoponto.horario_funcionamento}.\n\nItens aceitos: ${ecoponto.itens_recebidos.join(', ')}`,
             location: {
                 lat: ecoponto.latitude,
                 lng: ecoponto.longitude
@@ -215,7 +241,7 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
         },
       ],
     });
-    console.log(openAIResponse)
+    logger.info('OPENAI Response', openAIResponse)
     let response = openAIResponse.choices[0].message.content.split('```json').join('').split('```').join('')
     // Assumindo que a resposta da OpenAI vem no formato esperado, você pode precisar fazer um parse adicional
     // dependendo de como a informação é formatada na resposta.
