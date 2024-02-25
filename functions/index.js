@@ -249,7 +249,7 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
     return response;
 }
 
-exports.fetchAndStoreColetaData = onRequest({
+exports.fetchHorarioColeta = onRequest({
         timeoutSeconds: 10,
     }, async (request, response) => {
 	// Parâmetros para a requisição ao endpoint
@@ -266,26 +266,31 @@ exports.fetchAndStoreColetaData = onRequest({
         const coletaDataResponse = await axios.get(url).then( d => {
             return d.data;
         }).catch(e => {
-            activateStudio(request.body.to, request.body.from, { "mensagem" : "Não foi possível encontrar os horários."});
+            if (request.body.to) {
+                activateStudio(request.body.to, { "mensagem" : "Não foi possível encontrar os horários."});
+            }
+            logger.info('ERROR', e)
             return null;
         });
         logger.info('RESPONSE', coletaDataResponse);
 
         if (coletaDataResponse.result.length > 0) {
-            mensagem = parseHorarioResponse(coletaDataResponse.result[0]);
-            activateStudio(request.body.to, request.body.from, { "mensagem" : mensagem});
+            mensagem = await parseHorarioResponse(coletaDataResponse.result[0]);
+            if (request.body.to) {
+                activateStudio(request.body.to, { "mensagem" : mensagem});
+            }
+            response.status(200).send(mensagem);
 
         } else {
-            activateStudio(request.body.to, request.body.from, { "mensagem" : "Esta localização não possui horários disponíveis."});
-            // response.status(200).send('Nenhum dado encontrado para os parâmetros fornecidos.');
+            if (request.body.to) {
+            activateStudio(request.body.to, { "mensagem" : "Esta localização não possui horários disponíveis."});
+            }
+            response.status(200).send('Nenhum dado encontrado para os parâmetros fornecidos.');
         }
 	} catch (error) {
         activateStudio(request.body.to, request.body.from, { "mensagem" : "Não foi possível encontrar os horários."});
         console.error("Erro ao buscar ou salvar dados: ", error);
-        // response.status(200).send("Erro interno ao buscar ou salvar dados.");
 	}
-    response.status(200).send('ok');
-
 });
 
 async function parseHorarioResponse(coletaDataResponse) {
