@@ -215,7 +215,7 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
       ],
     });
     console.log(openAIResponse)
-    const response = openAIResponse.choices[0].message.content.split('```json').join('').split('```').join('')
+    let response = openAIResponse.choices[0].message.content.split('```json').join('').split('```').join('')
     // Assumindo que a resposta da OpenAI vem no formato esperado, você pode precisar fazer um parse adicional
     // dependendo de como a informação é formatada na resposta.
     console.log(response);
@@ -236,6 +236,12 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
     catch (error)
     {
       response = { "mensagem" : openAIResponse.choices[0].message.content}
+      await admin.firestore().collection('logs').add({
+      
+        messageResponse: openAIResponse.choices[0].message,
+        from,
+        imageUrl
+        });
 
     }
 
