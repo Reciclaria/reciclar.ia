@@ -46,9 +46,8 @@ exports.identificaLixo = onRequest(async (request, response) => {
 
     try {
         // Simulação de análise de imagem pela OpenAI. Substitua isso pela sua implementação real.
-        const aiResponse = await analyzeImageWithOpenAI(imageUrl, request.body.from, request.body.to);
-        activateStudio(request.body.to, request.body.from, aiResponse)
-
+        const aiResponse = await analyzeImageWithOpenAI(imageUrl, request.body.from);
+        activateStudio(request.body.to, request.body.from, aiResponse);
         response.status(200).send(JSON.stringify(aiResponse));
     } catch (error) {
         logger.error('Erro ao processar a imagem', error);
@@ -196,7 +195,7 @@ const getFirestorePrompt = async () => {
     `;
 }
 
-async function analyzeImageWithOpenAI(imageUrl,from, to) {
+async function analyzeImageWithOpenAI(imageUrl,from) {
     const openAIResponse = await openai.chat.completions.create({
       model: "gpt-4-vision-preview",
       max_tokens: 2000,
@@ -222,22 +221,24 @@ async function analyzeImageWithOpenAI(imageUrl,from, to) {
     console.log(response);
     try {
       response = JSON.parse(response)
-    }
-    catch (error)
-    {
-      activateStudio(to, from, { "mensagem" : openAIResponse.choices[0].message.content})
-
-    }
-    await admin.firestore().collection('logs').add({
+      await admin.firestore().collection('logs').add({
       
         messageResponse: openAIResponse.choices[0].message,
         response: response,
         from,
         imageUrl
-    });
-  
-    // Aqui você retornaria a resposta processada conforme necessário para seu uso.
-    // Isso pode envolver converter a string JSON em um objeto JavaScript para facilitar o manuseio.
+        });
+      
+        // Aqui você retornaria a resposta processada conforme necessário para seu uso.
+        // Isso pode envolver converter a string JSON em um objeto JavaScript para facilitar o manuseio.
+        
+  }
+    catch (error)
+    {
+      response = { "mensagem" : openAIResponse.choices[0].message.content}
+
+    }
+
     return response;
 }
 
