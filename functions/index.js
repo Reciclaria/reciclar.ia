@@ -279,52 +279,56 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
 exports.fetchHorarioColeta = onRequest({
     timeoutSeconds: 10,
 }, async (request, response) => {
-// Parâmetros para a requisição ao endpoint
-const { lat, lng, to } = request.body;
-const dst = '50'; // Distância padrão
-const limit = '5'; // Limite padrão de resultados
+    // Parâmetros para a requisição ao endpoint
+    const { lat, lng, to } = request.body;
+    const dst = '50'; // Distância padrão
+    const limit = '5'; // Limite padrão de resultados
 
-const ecourbis_url = `https://apicoleta.ecourbis.com.br/coleta?lat=${lat}&lng=${lng}&dst=${dst}&limit=${limit}`;
-const loga_url = `https://webservices.loga.com.br/sgo/eresiduos/BuscaPorLatLng?distance=${dst}&lat=${lat}&lng=${lng}`
-const header = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-    }
-try {
-    // Verifica se há resultados na resposta ECOURBIS
-    let { data } = await axios.get(ecourbis_url, { headers: header });
-    let msg = "A sua região não é atendida por coleta seletiva."
-    logger.info('API ECOURBIS Response', { data });
+    const ecourbis_url = `https://apicoleta.ecourbis.com.br/coleta?lat=${lat}&lng=${lng}&dst=${dst}&limit=${limit}`;
+    const loga_url = `https://webservices.loga.com.br/sgo/eresiduos/BuscaPorLatLng?distance=${dst}&lat=${lat}&lng=${lng}`
+    const header = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+        }
+    let found = false;
+    let msg = "Infelizmente, a sua região não foi encontrada nos pontos de coleta seletiva. :("
 
-    if (data && data.result && data.result.length > 0) {
-        console.log('EcoUrbis encontado!')
-        msg = await parseHorarioResponseEcourbis(data.result[0]);
-    } else {
+    try {
+        // Verifica se há resultados na resposta ECOURBIS
+        let { data } = await axios.get(ecourbis_url, { headers: header });
         
+        
+        logger.info('API ECOURBIS Response', { data });
+        if (data && data.result && data.result.length > 0) {
+            console.log('EcoUrbis encontado!')
+            found = true;    
+            msg = await parseHorarioResponseEcourbis(data.result[0]);
+        }    
         // Verifica se há resultados na resposta LOGA
-        let { data } = await axios.get(loga_url, { headers: header });
-        logger.info('API Loga Response', { data });
-        if (data && data.result) {
-            console.log('Loga encontado!')
-            if (data.found) {
-                msg = await parseHorarioResponseLoga(data.result.Logradouros);
+        if (!found) {
+            let { data } = await axios.get(loga_url, { headers: header });
+            logger.info('API Loga Response', { data });
+            if (data && data.result) {
+                console.log('Loga encontado!')
+                found = true;
+                if (data.found) {
+                    msg = await parseHorarioResponseLoga(data.result.Logradouros);
+                }
             }
         }
+    } catch (error) {
+        logger.error("Erro na API Loga", { error });
+        if (to) {
+            activateStudio(to, { "mensagem" : "Infelizmente tivemos um erro. Tente mais tarde." });
+        }
     }
+
     
     if (to) {
-        activateStudio(to, { "mensagem" : mensagem });
+        activateStudio(to, { "mensagem" : msg });
     }
     
     response.status(200).send(msg);
-    } catch (error) {
-    
-        logger.error("Erro na API", { error });
-        const errorMsg = "Desculpe, parece que tivemos um erro.";
-        if (to) {
-            activateStudio(to, { "mensagem" : errorMsg });
-        }
-        response.status(500).send(errorMsg);
-    }
+
 });
 
 async function parseHorarioResponseEcourbis(coletaDataResponse) {
