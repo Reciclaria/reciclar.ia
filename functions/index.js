@@ -129,7 +129,7 @@ exports.listaEcopontos = onRequest(async (request, response) => {
         const distanceInKm = geofire.distanceBetween([lat, lng], center);
         const distanceInM = distanceInKm * 1000;
 
-        logger.info('distanceInKm', distanceInKm);
+        // logger.info('distanceInKm', distanceInKm);
         if (distanceInM <= radiusInM) {
             let data = doc.data();
             data.distanceInM = distanceInM;
@@ -140,12 +140,35 @@ exports.listaEcopontos = onRequest(async (request, response) => {
     }
 
     // TODO: fazer sort por distanceInM
+    const ecopontos = matchingDocs
+        .sort((current, next) => current.distanceInM - next.distanceInM);
 
-    logger.info('RESULTADO GEOHASH', matchingDocs);
+    if (ecopontos.length > 0) {
+        const ecoponto = ecopontos[0]
+        // TODO: receber lat long ou endereço
+        logger.info('RESULTADO GEOHASH', ecopontos);
 
+        response.contentType('application/json').status(200).send(JSON.stringify({
+            mensagem: `Encontrei o seguinte ecoponto próximo de você:\n\n*${ecoponto.nome}*\n\n${ecoponto.endereco}\nCep: ${ecoponto.cep}\n${ecoponto.distanceInM.toFixed(0)} metro(s) de você.\n\nTelefone: ${ecoponto.telefone}\nHorário de Funcionamento: ${ecoponto.horario_funcionamento}.\n\nItens aceitos: ${ecoponto.itens_recebidos.join(', ')}`,
+            location: {
+                lat: ecoponto.latitude,
+                lng: ecoponto.longitude
+            },
+            nome: ecoponto.nome
+        }));
 
-    // TODO: receber lat long ou endereço
-    response.status(200).send(`Resultado Ecopontos: ${JSON.stringify(request.body)}\n\nHASH: ${JSON.stringify(matchingDocs)}`);
+    } else {
+        // TODO: receber lat long ou endereço
+        logger.info('RESULTADO GEOHASH: SEM ECOPONTO');
+
+        response.contentType('application/json').status(200).send(JSON.stringify({
+            mensagem: `Não encontrei nenhum ecoponto em um raio de 5 quilômetros da sua localização.`
+        }));
+        // response.status(200).send(`Não encontrei nenhum ecoponto em um raio de 5 quilômetros da sua localização.`);
+
+    }
+
+    
 });
 
 
