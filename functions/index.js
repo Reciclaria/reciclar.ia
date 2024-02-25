@@ -248,7 +248,9 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
     return response;
 }
 
-exports.fetchAndStoreColetaData = onRequest(async (request, response) => {
+exports.fetchAndStoreColetaData = onRequest({
+        timeoutSeconds: 20,
+    }, async (request, response) => {
 	// Parâmetros para a requisição ao endpoint
 	const lat = request.body.lat; // Latitude padrão caso não seja fornecida
 	const lng = request.body.lng; // Longitude padrão caso não seja fornecida
@@ -256,30 +258,41 @@ exports.fetchAndStoreColetaData = onRequest(async (request, response) => {
 	const limit = '5'; // Limite padrão de resultados
 
 	const url = `https://apicoleta.ecourbis.com.br/coleta?lat=${lat}&lng=${lng}&dst=${dst}&limit=${limit}`;
+    // https://apicoleta.ecourbis.com.br/coleta?lat=-23.564281463623&lng=-46.701110839844&dst=50&limit=5 
 
 	try {
-			const coletaDataResponse = await axios.get(url);
-			if (coletaDataResponse.data && coletaDataResponse.data.result.length > 0) {
-					mensagem = parseHorarioResponse(coletaDataResponse);
-					activateStudio(request.body.to, request.body.from, { "mensagem" : mensagem});
-					response.status(200).send()
-			} else {
-					response.status(404).send('Nenhum dado encontrado para os parâmetros fornecidos.');
-			}
+        const coletaDataResponse = await axios.get(url).then( d => {
+            return d.data;
+        }).catch(e => {
+            activateStudio(request.body.to, request.body.from, { "mensagem" : "Não foi possível encontrar os horários."});
+            return null;
+        });
+        if (coletaDataResponse.result.length > 0) {
+            logger.info('RESPONSE', coletaDataResponse);
+            mensagem = parseHorarioResponse(coletaDataResponse.result[0]);
+            activateStudio(request.body.to, request.body.from, { "mensagem" : mensagem});
+
+        } else {
+            activateStudio(request.body.to, request.body.from, { "mensagem" : "Esta localização não possui horários disponíveis."});
+            // response.status(200).send('Nenhum dado encontrado para os parâmetros fornecidos.');
+        }
 	} catch (error) {
-			console.error("Erro ao buscar ou salvar dados: ", error);
-			response.status(500).send("Erro interno ao buscar ou salvar dados.");
+        activateStudio(request.body.to, request.body.from, { "mensagem" : "Não foi possível encontrar os horários."});
+        console.error("Erro ao buscar ou salvar dados: ", error);
+        // response.status(200).send("Erro interno ao buscar ou salvar dados.");
 	}
+    response.status(200).send('ok');
+
 });
 
 async function parseHorarioResponse(coletaDataResponse) {
-	const horariosDomiciliar = coletaDataResponse.data.result[0].domiciliar.horarios;
-	const horariosSeletiva = coletaDataResponse.data.result[0].seletiva.horarios;
+	const horariosDomiciliar = coletaDataResponse.domiciliar.horarios;
+	const horariosSeletiva = coletaDataResponse.seletiva.horarios;
 
 	// Construindo a string de resposta
 	let resposta = 'Os horários de coleta no seu local são:\nLixo comum:\n';
 	Object.keys(horariosDomiciliar).forEach(dia => {
-			resposta += `${dia}: ${horariosDomiciliar[dia]}\n`;
+        resposta += `${dia}: ${horariosDomiciliar[dia]}\n`;
 	});
 
 	resposta += '\nColeta seletiva:\n';
@@ -290,6 +303,6 @@ async function parseHorarioResponse(coletaDataResponse) {
 	});
 
 	resposta += '\nAtenção: Os horários, quando informados, estão sujeitos à defasagem em virtude dos seguintes fatores: aumento de resíduos disponibilizados no setor, principalmente às segundas e terças-feiras, trânsito, desvios, interdição de vias, e/ou quaisquer outros alheios à operação.';
-	return resposta
+	return resposta;
 }
 
