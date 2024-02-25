@@ -275,51 +275,62 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
     return response;
 }
 
-exports.fetchAndStoreColetaData = onRequest({
-        timeoutSeconds: 10,
-    }, async (request, response) => {
-	// Parâmetros para a requisição ao endpoint
-	const lat = request.body.lat; // Latitude padrão caso não seja fornecida
-	const lng = request.body.lng; // Longitude padrão caso não seja fornecida
-	const dst = '50'; // Distância padrão caso não seja fornecida
-	const limit = '5'; // Limite padrão de resultados
 
-	const url = `https://apicoleta.ecourbis.com.br/coleta?lat=${lat}&lng=${lng}&dst=${dst}&limit=${limit}`;
-    // https://apicoleta.ecourbis.com.br/coleta?lat=-23.564281463623&lng=-46.701110839844&dst=50&limit=5 
+exports.fetchHorarioColeta = onRequest({
+    timeoutSeconds: 10,
+}, async (request, response) => {
+// Parâmetros para a requisição ao endpoint
+const { lat, lng, to } = request.body;
+const dst = '50'; // Distância padrão
+const limit = '5'; // Limite padrão de resultados
 
-    logger.info('API ECOURBIS', url);
-	try {
-        const coletaDataResponse = await axios.get(url).then( d => {
-            return d.data;
-        }).catch(e => {
-            activateStudio(request.body.to, request.body.from, { "mensagem" : "Não foi possível encontrar os horários."});
-            return null;
-        });
-        logger.info('RESPONSE', coletaDataResponse);
+const ecourbis_url = `https://apicoleta.ecourbis.com.br/coleta?lat=${lat}&lng=${lng}&dst=${dst}&limit=${limit}`;
+const loga_url = `https://webservices.loga.com.br/sgo/eresiduos/BuscaPorLatLng?distance=${dst}&lat=${lat}&lng=${lng}`
 
-        if (coletaDataResponse.result.length > 0) {
-            mensagem = parseHorarioResponse(coletaDataResponse.result[0]);
-            activateStudio(request.body.to, request.body.from, { "mensagem" : mensagem});
+try {
+    // Verifica se há resultados na resposta ECOURBIS
+    let { data } = await axios.get(ecourbis_url);
+    let msg = "A sua região não é atendida por coleta seletiva."
+    logger.info('API ECOURBIS Response', { data });
 
-        } else {
-            activateStudio(request.body.to, request.body.from, { "mensagem" : "Esta localização não possui horários disponíveis."});
-            // response.status(200).send('Nenhum dado encontrado para os parâmetros fornecidos.');
+    if (data && data.result && data.result.length > 0) {
+        console.log('EcoUrbis encontado!')
+        msg = await parseHorarioResponseEcourbis(data.result[0]);
+    } else {
+        
+        // Verifica se há resultados na resposta LOGA
+        let { data } = await axios.get(loga_url);
+        logger.info('API Loga Response', { data });
+        if (data && data.result) {
+            console.log('Loga encontado!')
+            if (data.found) {
+                msg = await parseHorarioResponseLoga(data.result.Logradouros);
+            }
         }
-	} catch (error) {
-        activateStudio(request.body.to, request.body.from, { "mensagem" : "Não foi possível encontrar os horários."});
-        console.error("Erro ao buscar ou salvar dados: ", error);
-        // response.status(200).send("Erro interno ao buscar ou salvar dados.");
-	}
-    response.status(200).send('ok');
-
+    }
+    
+    if (to) {
+        activateStudio(to, { "mensagem" : mensagem });
+    }
+    
+    response.status(200).send(msg);
+    } catch (error) {
+    
+        logger.error("Erro na API", { error });
+        const errorMsg = "Desculpe, parece que tivemos um erro.";
+        if (to) {
+            activateStudio(to, { "mensagem" : errorMsg });
+        }
+        response.status(500).send(errorMsg);
+    }
 });
 
-async function parseHorarioResponse(coletaDataResponse) {
+async function parseHorarioResponseEcourbis(coletaDataResponse) {
 	const horariosDomiciliar = coletaDataResponse.domiciliar.horarios;
 	const horariosSeletiva = coletaDataResponse.seletiva.horarios;
 
 	// Construindo a string de resposta
-	let resposta = 'Os horários de coleta no seu local são:\nLixo comum:\n';
+	let resposta = 'Quem te atende é a Ecourbis!\nOs horários de coleta no seu local são:\nLixo comum:\n';
 	Object.keys(horariosDomiciliar).forEach(dia => {
         resposta += `${dia}: ${horariosDomiciliar[dia]}\n`;
 	});
@@ -335,3 +346,39 @@ async function parseHorarioResponse(coletaDataResponse) {
 	return resposta;
 }
 
+async function parseHorarioResponseLoga(coletaData) {
+    let resposta = 'Quem te atende é a Loga!\nOs horários de coleta no seu local são:\nLixo comum:\n';
+    // Coleta domiciliar
+    if (coletaData[0]) {
+        const domiciliar = coletaData[0].Domiciliar; //deve dar bool
+        const dias = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
+        
+        dias.forEach(dia => {
+            console.log(`Has${dia}`)
+            const hasDia = domiciliar[`Has${dia}`];
+            
+            if (hasDia) {
+                const horario = domiciliar[`Hora${dia}`];
+                resposta += `${dia}: ${horario}\n`;
+            }
+        });
+    }
+
+    resposta += '\nColeta seletiva:\n';
+    // Coleta seletiva
+    if (coletaData[0].Seletiva) {
+        const seletiva = coletaData[0].Seletiva;
+        const dias = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
+
+        dias.forEach(dia => {
+            const hasDia = seletiva[`Has${dia}`];
+            if (hasDia) {
+                const horario = seletiva[`Hora${dia}`];
+                resposta += `${dia}: ${horario}\n`;
+            }
+        });
+    }
+
+    resposta += '\nAtenção: Os horários, quando informados, estão sujeitos à defasagem em virtude dos seguintes fatores: aumento de resíduos disponibilizados no setor, principalmente às segundas e terças-feiras, trânsito, desvios, interdição de vias, e/ou quaisquer outros alheios à operação.';
+    return resposta;
+}
