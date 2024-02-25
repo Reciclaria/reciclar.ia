@@ -286,10 +286,12 @@ const limit = '5'; // Limite padrão de resultados
 
 const ecourbis_url = `https://apicoleta.ecourbis.com.br/coleta?lat=${lat}&lng=${lng}&dst=${dst}&limit=${limit}`;
 const loga_url = `https://webservices.loga.com.br/sgo/eresiduos/BuscaPorLatLng?distance=${dst}&lat=${lat}&lng=${lng}`
-
+const header = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+    }
 try {
     // Verifica se há resultados na resposta ECOURBIS
-    let { data } = await axios.get(ecourbis_url);
+    let { data } = await axios.get(ecourbis_url, header=header);
     let msg = "A sua região não é atendida por coleta seletiva."
     logger.info('API ECOURBIS Response', { data });
 
@@ -299,7 +301,7 @@ try {
     } else {
         
         // Verifica se há resultados na resposta LOGA
-        let { data } = await axios.get(loga_url);
+        let { data } = await axios.get(loga_url, header=header);
         logger.info('API Loga Response', { data });
         if (data && data.result) {
             console.log('Loga encontado!')
