@@ -242,4 +242,48 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
     return response;
 }
 
+exports.fetchAndStoreColetaData = onRequest(async (request, response) => {
+	// Parâmetros para a requisição ao endpoint
+	const lat = request.body.lat; // Latitude padrão caso não seja fornecida
+	const lng = request.body.lng; // Longitude padrão caso não seja fornecida
+	const dst = '50'; // Distância padrão caso não seja fornecida
+	const limit = '5'; // Limite padrão de resultados
+
+	const url = `https://apicoleta.ecourbis.com.br/coleta?lat=${lat}&lng=${lng}&dst=${dst}&limit=${limit}`;
+
+	try {
+			const coletaDataResponse = await axios.get(url);
+			if (coletaDataResponse.data && coletaDataResponse.data.result.length > 0) {
+					mensagem = parseHorarioResponse(coletaDataResponse);
+					activateStudio(request.body.to, request.body.from, { "mensagem" : mensagem});
+					response.status(200).send()
+			} else {
+					response.status(404).send('Nenhum dado encontrado para os parâmetros fornecidos.');
+			}
+	} catch (error) {
+			console.error("Erro ao buscar ou salvar dados: ", error);
+			response.status(500).send("Erro interno ao buscar ou salvar dados.");
+	}
+});
+
+async function parseHorarioResponse(coletaDataResponse) {
+	const horariosDomiciliar = coletaDataResponse.data.result[0].domiciliar.horarios;
+	const horariosSeletiva = coletaDataResponse.data.result[0].seletiva.horarios;
+
+	// Construindo a string de resposta
+	let resposta = 'Os horários de coleta no seu local são:\nLixo comum:\n';
+	Object.keys(horariosDomiciliar).forEach(dia => {
+			resposta += `${dia}: ${horariosDomiciliar[dia]}\n`;
+	});
+
+	resposta += '\nColeta seletiva:\n';
+	Object.keys(horariosSeletiva).forEach(dia => {
+			if (horariosSeletiva[dia] !== '-') { // Inclui apenas os dias com horário definido
+					resposta += `${dia}: ${horariosSeletiva[dia]}\n`;
+			}
+	});
+
+	resposta += '\nAtenção: Os horários, quando informados, estão sujeitos à defasagem em virtude dos seguintes fatores: aumento de resíduos disponibilizados no setor, principalmente às segundas e terças-feiras, trânsito, desvios, interdição de vias, e/ou quaisquer outros alheios à operação.';
+	return resposta
+}
 
