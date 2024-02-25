@@ -1,6 +1,6 @@
-const {onRequest} = require("firebase-functions/v2/https");
+const { onRequest } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
-const {defineString} = require('firebase-functions/params');
+const { defineString } = require('firebase-functions/params');
 const axios = require('axios'); // Para chamadas HTTP
 const OpenAI = require('openai');
 
@@ -13,6 +13,8 @@ const TWILIO_AUTH_TOKEN = defineString('TWILIO_AUTH_TOKEN');
 const TWILIO_STUDIO_FLOW_SID = defineString('TWILIO_STUDIO_FLOW_SID');
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() });
+
+
 
 const activateStudio = async (to, from, json) => {
     const client = require('twilio')(TWILIO_ACCOUNT_SID.value(), TWILIO_AUTH_TOKEN.value());
@@ -53,6 +55,99 @@ exports.identificaLixo = onRequest(async (request, response) => {
         response.status(500).send('Erro interno');
     }
 });
+
+
+exports.importaPontosColeta = onRequest(async (request, response) => {
+    logger.info('CHAMOU importaPontosColeta!');
+
+    // Ler o arquivo JSON com os dados a serem importados
+    const dados = require('./data/pontosColeta.json');
+    const promises = [];
+    
+    dados.forEach(ponto => {
+        const promise = admin.firestore().collection('pontosColeta').add(ponto);
+        promises.push(promise);
+    });
+
+    try {
+        await Promise.all(promises);
+        response.status(200).send("Dados importados com sucesso para a coleção pontosColeta.");
+    } catch (error) {
+        console.error("Erro ao importar dados: ", error);
+        response.status(500).send("Erro ao importar dados para a coleção pontosColeta.");
+    }
+});
+
+
+exports.listaEcopontos = onRequest(async (request, response) => {
+
+    const geofire = require('geofire-common');
+    let center = [];
+    const radiusInM = 5 * 1000; 
+
+    if (request.body.lat && request.body.lng) {
+        center = [ parseFloat(request.body.lat), parseFloat(request.body.lng) ];
+        logger.info('listaEcopontos', center);
+
+    } else {
+        // TODO: fazer geolocation do texto
+
+    }
+
+
+    const bounds = geofire.geohashQueryBounds(center, radiusInM);
+    logger.info('BOUNDS', bounds);
+
+    const promises = [];
+    for (const b of bounds) {
+        const q = admin.firestore()
+            .collection('pontosColeta')
+            .orderBy('geohash')
+            .startAt(b[0]).endAt(b[1]);
+
+        // const q = query(
+        //     collection(admin.firestore(), 'pontosColeta'), 
+        //     orderBy('geohash'), 
+        //     startAt(b[0]), 
+        //     endAt(b[1]));
+
+
+        promises.push(q.get());
+    }
+    
+    // Collect all the query results together into a single list
+    const snapshots = await Promise.all(promises);
+    
+    const matchingDocs = [];
+    for (const snap of snapshots) {
+      for (const doc of snap.docs) {
+        const lat = parseFloat(doc.get('latitude'));
+        const lng = parseFloat(doc.get('longitude'));
+    
+        // We have to filter out a few false positives due to GeoHash
+        // accuracy, but most will match
+        const distanceInKm = geofire.distanceBetween([lat, lng], center);
+        const distanceInM = distanceInKm * 1000;
+
+        logger.info('distanceInKm', distanceInKm);
+        if (distanceInM <= radiusInM) {
+            let data = doc.data();
+            data.distanceInM = distanceInM;
+            data.distanceInKm = distanceInKm;
+            matchingDocs.push(data);
+        }
+      }
+    }
+
+    // TODO: fazer sort por distanceInM
+
+    logger.info('RESULTADO GEOHASH', matchingDocs);
+
+
+    // TODO: receber lat long ou endereço
+    response.status(200).send(`Resultado Ecopontos: ${JSON.stringify(request.body)}\n\nHASH: ${JSON.stringify(matchingDocs)}`);
+});
+
 
 const getFirestorePrompt = async () => {    
     const settings = await admin.firestore().collection('settings').doc('default').get();
@@ -104,6 +199,7 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
     console.log(response);
 
     await admin.firestore().collection('logs').add({
+      
         messageResponse: openAIResponse.choices[0].message,
         response: JSON.parse(response),
         from,
@@ -113,24 +209,6 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
     // Aqui você retornaria a resposta processada conforme necessário para seu uso.
     // Isso pode envolver converter a string JSON em um objeto JavaScript para facilitar o manuseio.
     return JSON.parse(response);
-  }
+}
 
-exports.importaPontosColeta = onRequest(async (request, response) => {
-    // Ler o arquivo JSON com os dados a serem importados
-    const dados = require('./data/pontosColeta.json');
-    
-    const promises = [];
-    
-    dados.forEach(ponto => {
-        const promise = admin.firestore().collection('pontosColeta').add(ponto);
-        promises.push(promise);
-    });
 
-    try {
-        await Promise.all(promises);
-        response.status(200).send("Dados importados com sucesso para a coleção pontosColeta.");
-    } catch (error) {
-        console.error("Erro ao importar dados: ", error);
-        response.status(500).send("Erro ao importar dados para a coleção pontosColeta.");
-    }
-});
