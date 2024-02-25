@@ -291,7 +291,7 @@ const header = {
     }
 try {
     // Verifica se há resultados na resposta ECOURBIS
-    let { data } = await axios.get(ecourbis_url, header=header);
+    let { data } = await axios.get(ecourbis_url, { headers: header });
     let msg = "A sua região não é atendida por coleta seletiva."
     logger.info('API ECOURBIS Response', { data });
 
@@ -301,7 +301,7 @@ try {
     } else {
         
         // Verifica se há resultados na resposta LOGA
-        let { data } = await axios.get(loga_url, header=header);
+        let { data } = await axios.get(loga_url, { headers: header });
         logger.info('API Loga Response', { data });
         if (data && data.result) {
             console.log('Loga encontado!')
