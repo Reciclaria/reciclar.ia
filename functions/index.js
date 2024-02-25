@@ -18,7 +18,7 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() });
 
 
 
-const activateStudio = async (to, from, json) => {
+const activateStudio = async (to, json) => {
     const client = require('twilio')(TWILIO_ACCOUNT_SID.value(), TWILIO_AUTH_TOKEN.value());
 
     logger.info(`activateStudio: executando via ${TWILIO_MESSAGE_SERVICE_SID.value()}`);
@@ -52,7 +52,7 @@ exports.identificaLixo = onRequest(async (request, response) => {
     try {
         // Simulação de análise de imagem pela OpenAI. Substitua isso pela sua implementação real.
         const aiResponse = await analyzeImageWithOpenAI(imageUrl, request.body.from);
-        activateStudio(request.body.to, request.body.from, aiResponse);
+        activateStudio(request.body.to, aiResponse);
         response.status(200).send(JSON.stringify(aiResponse));
     } catch (error) {
         logger.error('Erro ao processar a imagem', error);
