@@ -20,14 +20,15 @@ const activateStudio = async (to, from, json) => {
     const client = require('twilio')(TWILIO_ACCOUNT_SID.value(), TWILIO_AUTH_TOKEN.value());
 
     client.studio.v2.flows(TWILIO_STUDIO_FLOW_SID.value())
-             .executions
-             .create({
-                 to, 
-                 from,
-                 parameters: {
-                   json
-                 }})
-             .then(execution => console.log(execution.sid));
+    .executions
+    .create({
+        to, 
+        from,
+        parameters: {
+            json
+        }
+    })
+    .then(execution => console.log(execution.sid));
 
 }
 // Defina suas variáveis de ambiente no Firebase.
@@ -249,7 +250,7 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
 }
 
 exports.fetchAndStoreColetaData = onRequest({
-        timeoutSeconds: 20,
+        timeoutSeconds: 10,
     }, async (request, response) => {
 	// Parâmetros para a requisição ao endpoint
 	const lat = request.body.lat; // Latitude padrão caso não seja fornecida
@@ -260,6 +261,7 @@ exports.fetchAndStoreColetaData = onRequest({
 	const url = `https://apicoleta.ecourbis.com.br/coleta?lat=${lat}&lng=${lng}&dst=${dst}&limit=${limit}`;
     // https://apicoleta.ecourbis.com.br/coleta?lat=-23.564281463623&lng=-46.701110839844&dst=50&limit=5 
 
+    logger.info('API ECOURBIS', url);
 	try {
         const coletaDataResponse = await axios.get(url).then( d => {
             return d.data;
@@ -267,8 +269,9 @@ exports.fetchAndStoreColetaData = onRequest({
             activateStudio(request.body.to, request.body.from, { "mensagem" : "Não foi possível encontrar os horários."});
             return null;
         });
+        logger.info('RESPONSE', coletaDataResponse);
+
         if (coletaDataResponse.result.length > 0) {
-            logger.info('RESPONSE', coletaDataResponse);
             mensagem = parseHorarioResponse(coletaDataResponse.result[0]);
             activateStudio(request.body.to, request.body.from, { "mensagem" : mensagem});
 
