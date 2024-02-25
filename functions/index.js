@@ -304,7 +304,7 @@ async function parseHorarioResponseEcourbis(coletaDataResponse) {
 	const horariosSeletiva = coletaDataResponse.seletiva.horarios;
 
 	// Construindo a string de resposta
-	let resposta = 'Os horários de coleta no seu local são:\nLixo comum:\n';
+	let resposta = 'Quem te atende é a Ecourbis!\nOs horários de coleta no seu local são:\nLixo comum:\n';
 	Object.keys(horariosDomiciliar).forEach(dia => {
         resposta += `${dia}: ${horariosDomiciliar[dia]}\n`;
 	});
@@ -321,10 +321,10 @@ async function parseHorarioResponseEcourbis(coletaDataResponse) {
 }
 
 async function parseHorarioResponseLoga(coletaData) {
-    let resposta = 'Os horários de coleta no seu local são:\nLixo comum:\n';
+    let resposta = 'Quem te atende é a Loga!\nOs horários de coleta no seu local são:\nLixo comum:\n';
     // Coleta domiciliar
     if (coletaData[0]) {
-        const domiciliar = coletaData.Domiciliar;
+        const domiciliar = coletaData[0].Domiciliar; //deve dar bool
         const dias = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
         
         dias.forEach(dia => {
@@ -341,7 +341,7 @@ async function parseHorarioResponseLoga(coletaData) {
     resposta += '\nColeta seletiva:\n';
     // Coleta seletiva
     if (coletaData[0].Seletiva) {
-        const seletiva = coletaData.Seletiva;
+        const seletiva = coletaData[0].Seletiva;
         const dias = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
 
         dias.forEach(dia => {
