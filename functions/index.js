@@ -197,6 +197,35 @@ exports.listaEcopontos = onRequest(async (request, response) => {
     
 });
 
+exports.gerarDicaRandomica = onRequest(async (request, response) => {
+    const dicas = [
+        { 
+            mensagem: `*Compre a granel:* Comprar a granel pode ajudar a reduzir a quantidade de embalagens individuais que você consome. Procure lojas que oferecem opções a granel para itens como alimentos, produtos de limpeza e itens de higiene pessoal.`,
+            imagem: ``
+        },
+        { 
+            mensagem: `*Recicle corretamente:* Certifique-se de separar seus resíduos em materiais recicláveis e não-recicláveis e lembre de manter os recicláveis SECOS e LIMPOS para evitar contaminação. Se tiver dúvida sobre um item, mande a foto aqui 😉`,
+            imagem: ``
+        },
+        { 
+            mensagem: `*Escolha produtos com menos embalagens:* Ao comprar produtos, prefira aqueles que possuem menos embalagens ou que vêm em embalagens recicláveis. Evite produtos excessivamente embalados em plástico ou outros materiais não-recicláveis.`,
+            imagem: ``
+        },
+        { 
+            mensagem: `*Símbolo de FSC (Forest Stewardship Council):* Se você estiver procurando por produtos de papel ou madeira, pode procurar por produtos certificados pelo FSC. Este rótulo indica que o produto foi produzido de forma sustentável, considerando os aspectos ambientais, sociais e econômicos da sua produção.`,
+            imagem: ``
+        },
+        { 
+            mensagem: `*📷 Descarte seus móveis 🛏️ 🛋️ 🪑danificados em um ECOPONTO:* A cidade de São Paulo conta com Ecopontos especializados em dar o destino correto para seus móveis. Se puder, dirija-se até um local próximo e evite que esse material vá parar em um aterro, onde ficará por centenas de anos. Mande a foto do seu móvel aqui e compartilhe sua localização para que o Reciclar.ia te indique o ecoponto mais próximo😉`,
+            imagem: ``
+        }
+
+    ]
+    let dica = dicas[Math.floor(Math.random() * dicas.length)];
+    response.contentType('application/json').status(200).send(JSON.stringify(dica));
+});
+
+
 
 const getFirestorePrompt = async () => {    
     const settings = await admin.firestore().collection('settings').doc('default').get();
@@ -247,13 +276,13 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
     // dependendo de como a informação é formatada na resposta.
     console.log(response);
     try {
-      response = JSON.parse(response)
-      await admin.firestore().collection('logs').add({
-      
-        messageResponse: openAIResponse.choices[0].message,
-        response: response,
-        from,
-        imageUrl
+        response = JSON.parse(response)
+        await admin.firestore().collection('logs').add({
+            timestamp: admin.firestore.Timestamp.now(),
+            messageResponse: openAIResponse.choices[0].message,
+            response: response,
+            from,
+            imageUrl
         });
       
         // Aqui você retornaria a resposta processada conforme necessário para seu uso.
@@ -285,26 +314,32 @@ exports.fetchHorarioColeta = onRequest({
     const limit = '5'; // Limite padrão de resultados
 
     const ecourbis_url = `https://apicoleta.ecourbis.com.br/coleta?lat=${lat}&lng=${lng}&dst=${dst}&limit=${limit}`;
+    // const ecourbis_url = `https://apicoleta.ecourbis.com.br/coleta?lat=-23.6193175&lng=-46.682458&dst=100`;
     const loga_url = `https://webservices.loga.com.br/sgo/eresiduos/BuscaPorLatLng?distance=${dst}&lat=${lat}&lng=${lng}`
     const header = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-        }
-    let found = false;
-    let msg = "Infelizmente, a sua região não foi encontrada nos pontos de coleta seletiva. :("
+    }
 
-    try {
+    let found = false;
+    let msg = `Infelizmente, a sua região não foi encontrada nos pontos de coleta seletiva da LOGA. Caso sua localidade seja atendida pela a ECOURBIS não é possível fazer a consulta neste momento. :(`
+
+    // try {
         // Verifica se há resultados na resposta ECOURBIS
-        let { data } = await axios.get(ecourbis_url, { headers: header });
-        
-        
-        logger.info('API ECOURBIS Response', { data });
-        if (data && data.result && data.result.length > 0) {
-            console.log('EcoUrbis encontado!')
-            found = true;    
-            msg = await parseHorarioResponseEcourbis(data.result[0]);
-        }    
+        // logger.info('URL URBIS', ecourbis_url);
+        // let { data } = await axios.get(ecourbis_url, { headers: header });
+
+        // logger.info('API ECOURBIS Response', { data });
+        // if (data && data.result && data.result.length > 0) {
+        //     logger.info('RECEBEU DATA URBIS');
+        //     found = true;    
+        //     msg = await parseHorarioResponseEcourbis(data.result[0]);
+        // } else {
+        //     logger.info('SEM DATA URBIS');
+        // }
+
         // Verifica se há resultados na resposta LOGA
         if (!found) {
+            logger.info('URL LOGA', loga_url);
             let { data } = await axios.get(loga_url, { headers: header });
             logger.info('API Loga Response', { data });
             if (data && data.result) {
@@ -315,12 +350,12 @@ exports.fetchHorarioColeta = onRequest({
                 }
             }
         }
-    } catch (error) {
-        logger.error("Erro na API Loga", { error });
-        if (to) {
-            activateStudio(to, { "mensagem" : "Infelizmente tivemos um erro. Tente mais tarde." });
-        }
-    }
+    // } catch (error) {
+    //     logger.error("Erro na API Loga", { error });
+    //     if (to) {
+    //         activateStudio(to, { "mensagem" : "Infelizmente tivemos um erro. Tente mais tarde." });
+    //     }
+    // }
 
     
     if (to) {
@@ -332,6 +367,7 @@ exports.fetchHorarioColeta = onRequest({
 });
 
 async function parseHorarioResponseEcourbis(coletaDataResponse) {
+    logger.info('PARSE ECOURBIS', coletaDataResponse);
 	const horariosDomiciliar = coletaDataResponse.domiciliar.horarios;
 	const horariosSeletiva = coletaDataResponse.seletiva.horarios;
 
@@ -353,6 +389,8 @@ async function parseHorarioResponseEcourbis(coletaDataResponse) {
 }
 
 async function parseHorarioResponseLoga(coletaData) {
+    logger.info('PARSE LOGA', coletaData);
+
     let resposta = 'Quem te atende é a Loga!\nOs horários de coleta no seu local são:\nLixo comum:\n';
     // Coleta domiciliar
     if (coletaData[0]) {
