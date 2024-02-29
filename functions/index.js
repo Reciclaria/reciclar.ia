@@ -60,28 +60,22 @@ exports.identificaLixo = onRequest(async (request, response) => {
     }
 });
 
-
 exports.importaPontosColeta = onRequest(async (request, response) => {
     logger.info('CHAMOU importaPontosColeta!');
 
     // Ler o arquivo JSON com os dados a serem importados
     const dados = require('./data/pontosColeta.json');
-    const promises = [];
-    
-    dados.forEach(ponto => {
-        const promise = admin.firestore().collection('pontosColeta').add(ponto);
-        promises.push(promise);
-    });
 
     try {
-        await Promise.all(promises);
-        response.status(200).send("Dados importados com sucesso para a coleção pontosColeta.");
+        // Adiciona todos os pontos de coleta como um único objeto/documento no Firestore
+        await admin.firestore().collection('pontosColeta').doc('todosPontos').set({dados});
+        logger.info('Dado enviados:', dados);
+        response.status(200).send("Dados importados com sucesso como um único objeto para a coleção pontosColeta.");
     } catch (error) {
         console.error("Erro ao importar dados: ", error);
-        response.status(500).send("Erro ao importar dados para a coleção pontosColeta.");
+        response.status(500).send("Erro ao importar dados como um único objeto para a coleção pontosColeta.");
     }
 });
-
 
 exports.listaEcopontos = onRequest(async (request, response) => {
 
