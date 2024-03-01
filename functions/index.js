@@ -60,6 +60,7 @@ exports.identificaLixo = onRequest(async (request, response) => {
     }
 });
 
+
 exports.importaPontosColeta = onRequest(async (request, response) => {
     logger.info('CHAMOU importaPontosColeta!');
 
@@ -79,116 +80,42 @@ exports.importaPontosColeta = onRequest(async (request, response) => {
 
 exports.listaEcopontos = onRequest(async (request, response) => {
 
-    // TODO: parametro de filtro "request.body.filtro"
-    // TODO: caso venha sem parâmetro filtar os que tem 
-
     const geofire = require('geofire-common');
-    let center = [];
-    let radiusInM = 5 * 1000; 
 
-    if (request.body.lat && request.body.lng) {
-        center = [ parseFloat(request.body.lat), parseFloat(request.body.lng) ];
-        logger.info('listaEcopontos', center);
+    let center = [parseFloat(request.body.lat), parseFloat(request.body.lng)];
+    let radiusInM = 5 * 1000; // Raio padrão de 5 km
+
+    // Recuperar dados de pontos de coleta do documento único
+    const pontoColetaDoc = await admin.firestore().collection('pontosColeta').doc('todosPontos').get();
+    let dados = pontoColetaDoc.exists ? pontoColetaDoc.data().dados : [];
+
+    const pontosFiltrados = dados.filter(ponto => {
+        const distanceInKm = geofire.distanceBetween([parseFloat(ponto.latitude), parseFloat(ponto.longitude)], center);
+        ponto.distanceInM = distanceInKm * 1000;
+        return ponto.distanceInM <= radiusInM;
+    });
+
+    // Ordenar por distância do mais próximo ao mais distante
+    const pontosOrdenados = pontosFiltrados.sort((a, b) => {
+        const distanceA = geofire.distanceBetween([parseFloat(a.latitude), parseFloat(a.longitude)], center) * 1000;
+        const distanceB = geofire.distanceBetween([parseFloat(b.latitude), parseFloat(b.longitude)], center) * 1000;
+        return distanceA - distanceB;
+    });
+
+    // Selecionar o ponto de coleta mais próximo
+    const pontoMaisProximo = pontosOrdenados.length > 0 ? pontosOrdenados[0] : null;
+
+    if (pontoMaisProximo) {
+        logger.info('RESULTADO GEOHASH', pontoMaisProximo);
+
+        response.contentType('application/json').status(200).send(JSON.stringify(formatarRespostaListaPonto(pontoMaisProximo)));
     } else {
-        // TODO: fazer geolocation do texto
-    }
-
-    let tipos = null;
-    if (request.body.filtro) {
-        tipos = request.body.filtro.toLowerCase().split(', ');
-        // if (tipos.includes('Entulhos')) {
-        //     radiusInM = 10 * 1000; 
-        // }
-    }
-
-
-    const bounds = geofire.geohashQueryBounds(center, radiusInM);
-    logger.info('BOUNDS', bounds);
-
-    const promises = [];
-    for (const b of bounds) {
-        const q = admin.firestore()
-            .collection('pontosColeta')
-            .orderBy('geohash')
-            .startAt(b[0]).endAt(b[1]);
-
-        promises.push(q.get());
-    }
-    
-    // Collect all the query results together into a single list
-    const snapshots = await Promise.all(promises);
-    
-    const matchingDocs = [];
-    for (const snap of snapshots) {
-      for (const doc of snap.docs) {
-        const lat = parseFloat(doc.get('latitude'));
-        const lng = parseFloat(doc.get('longitude'));
-    
-        // We have to filter out a few false positives due to GeoHash
-        // accuracy, but most will match
-        const distanceInKm = geofire.distanceBetween([lat, lng], center);
-        const distanceInM = distanceInKm * 1000;
-
-        // logger.info('distanceInKm', distanceInKm);
-        if (distanceInM <= radiusInM) {
-            let data = doc.data();
-            data.distanceInM = distanceInM;
-            data.distanceInKm = distanceInKm;
-            matchingDocs.push(data);
-        }
-      }
-    }
-
-    // TODO: fazer sort por distanceInM
-    let ecopontos = matchingDocs;
-
-    ecopontos = ecopontos.sort((current, next) => current.distanceInM - next.distanceInM);
-    logger.info('ECOPONTOS GERAL SORTED', ecopontos);
-
-    if (tipos) {
-        // const tipos = request.body.filtro.toLowerCase().split(', ');
-        logger.info('TIPOS ENCONTRADOS', tipos);
-
-        // Filtrar locais
-        ecopontos = ecopontos.filter(function(e) {
-            return e.itens_recebidos.some(function(item) {
-                return tipos.includes(item);
-            });
-        });
-    } else {
-        // categoria padrão precisa listar pelo menos 3 tipos de itens recebidos
-        ecopontos = ecopontos.filter( e => e.itens_recebidos.length >= 3 );
-        logger.info('ECOPONTOS 3 TIPOS', ecopontos);
-
-    }
-
-
-    if (ecopontos.length > 0) {
-        const ecoponto = ecopontos[0]
-        // TODO: receber lat long ou endereço
-        logger.info('RESULTADO GEOHASH', ecopontos);
-
-        response.contentType('application/json').status(200).send(JSON.stringify({
-            mensagem: `Encontrei o seguinte ecoponto próximo de você:\n\n*${ecoponto.nome}*\n\n${ecoponto.endereco}\nCep: ${ecoponto.cep}\n\n*${ecoponto.distanceInM.toFixed(0)} metro(s) de você.*\n\nTelefone: ${ecoponto.telefone}\nHorário de Funcionamento: ${ecoponto.horario_funcionamento}.\n\nItens aceitos: ${ecoponto.itens_recebidos.join(', ')}`,
-            location: {
-                lat: ecoponto.latitude,
-                lng: ecoponto.longitude
-            },
-            nome: ecoponto.nome
-        }));
-
-    } else {
-        // TODO: receber lat long ou endereço
         logger.info('RESULTADO GEOHASH: SEM ECOPONTO');
 
         response.contentType('application/json').status(200).send(JSON.stringify({
             mensagem: `Não encontrei nenhum ecoponto em um raio de 5 quilômetros da sua localização.`
         }));
-        // response.status(200).send(`Não encontrei nenhum ecoponto em um raio de 5 quilômetros da sua localização.`);
-
     }
-
-    
 });
 
 exports.gerarDicaRandomica = onRequest(async (request, response) => {
@@ -419,4 +346,15 @@ async function parseHorarioResponseLoga(coletaData) {
 
     resposta += '\nAtenção: Os horários, quando informados, estão sujeitos à defasagem em virtude dos seguintes fatores: aumento de resíduos disponibilizados no setor, principalmente às segundas e terças-feiras, trânsito, desvios, interdição de vias, e/ou quaisquer outros alheios à operação.';
     return resposta;
+}
+
+function formatarRespostaListaPontoListaPonto(ponto) {
+    return {
+        mensagem: `Encontrei o seguinte ecoponto próximo de você:\n\n*${ponto.nome}*\n\n${ponto.endereco}\nCep: ${ponto.cep}\n\n*${ponto.distanceInM.toFixed(0)} metro(s) de você.*\n\nTelefone: ${ponto.telefone}\nHorário de Funcionamento: ${ponto.horario_funcionamento}.\n\nItens aceitos: ${ponto.itens_recebidos.join(', ')}`,
+        location: {
+            lat: ponto.latitude,
+            lng: ponto.longitude
+        },
+        nome: ponto.nome
+    };
 }
