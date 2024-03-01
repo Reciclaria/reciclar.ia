@@ -78,44 +78,73 @@ exports.importaPontosColeta = onRequest(async (request, response) => {
     }
 });
 
+
 exports.listaEcopontos = onRequest(async (request, response) => {
-
     const geofire = require('geofire-common');
+    if (!request.body.lat || !request.body.lng) {
+        return response.contentType('application/json').status(200).send(JSON.stringify({
+            mensagem: `Parâmetros informados para a busca estão inválidos.`
+        }));
+    }
+    const geo = {
+        lat: parseFloat(request.body.lat),
+        lng: parseFloat(request.body.lng)
+    };
+    let center = [geo.lat, geo.lng];
+    let radiusInM = request.body.radius ? parseInt(request.body.radius) : 5 * 1000; // Raio padrão de 5 km
 
-    let center = [parseFloat(request.body.lat), parseFloat(request.body.lng)];
-    let radiusInM = 5 * 1000; // Raio padrão de 5 km
+    let dados = require('./data/pontosColeta.json');
 
-    // Recuperar dados de pontos de coleta do documento único
-    const pontoColetaDoc = await admin.firestore().collection('pontosColeta').doc('todosPontos').get();
-    let dados = pontoColetaDoc.exists ? pontoColetaDoc.data().dados : [];
+    // Filtrar tipos solicitados primeiro
+    const tipos = request.body.filtro ? request.body.filtro.toLowerCase().split(', ') : [];
+    if (tipos.length > 0) {
+        dados = dados.filter(e => {
+            return e.itens_recebidos.some(function(item) {
+                return tipos.includes(item);
+            });
+        });
+    }
 
-    const pontosFiltrados = dados.filter(ponto => {
-        const distanceInKm = geofire.distanceBetween([parseFloat(ponto.latitude), parseFloat(ponto.longitude)], center);
-        ponto.distanceInM = distanceInKm * 1000;
-        return ponto.distanceInM <= radiusInM;
+    // Filtrar por geohash
+    const bounds = geofire.geohashQueryBounds(center, radiusInM);
+
+    let ecopontos = [];
+    const promises = [];
+    let i = 0;
+    for (const b of bounds) {
+        const items = dados.filter(d => {
+            return d.geohash >= b[0] && d.geohash <= b[1]
+        });
+        ecopontos = ecopontos.concat(items);
+    }
+
+    // Calcular distância de cada item encontrado
+    ecopontos = ecopontos.map((e) => {
+        e.distanceInKm = geofire.distanceBetween([parseFloat(e.latitude), parseFloat(e.longitude)], center);
+        e.distanceInM = e.distanceInKm * 1000;
+        console.log('distanceInKm', e.distanceInM);
+        return e;
     });
 
-    // Ordenar por distância do mais próximo ao mais distante
-    const pontosOrdenados = pontosFiltrados.sort((a, b) => {
-        const distanceA = geofire.distanceBetween([parseFloat(a.latitude), parseFloat(a.longitude)], center) * 1000;
-        const distanceB = geofire.distanceBetween([parseFloat(b.latitude), parseFloat(b.longitude)], center) * 1000;
-        return distanceA - distanceB;
+    // Segundo filtro de distância
+    ecopontos = ecopontos.filter(e => e.distanceInM <= radiusInM);
+    ecopontos = ecopontos.sort((a, b) => {
+        return a.distanceInM - b.distanceInM;
     });
 
     // Selecionar o ponto de coleta mais próximo
-    const pontoMaisProximo = pontosOrdenados.length > 0 ? pontosOrdenados[0] : null;
-
+    const pontoMaisProximo = ecopontos.length > 0 ? ecopontos[0] : null;
     if (pontoMaisProximo) {
         logger.info('RESULTADO GEOHASH', pontoMaisProximo);
-
         response.contentType('application/json').status(200).send(JSON.stringify(formatarRespostaListaPonto(pontoMaisProximo)));
     } else {
         logger.info('RESULTADO GEOHASH: SEM ECOPONTO');
-
         response.contentType('application/json').status(200).send(JSON.stringify({
             mensagem: `Não encontrei nenhum ecoponto em um raio de 5 quilômetros da sua localização.`
         }));
     }
+
+    // response.send(`DADOS: ${dados.length}\n\n\n${JSON.stringify(ecopontos)}`);
 });
 
 exports.gerarDicaRandomica = onRequest(async (request, response) => {
@@ -348,13 +377,14 @@ async function parseHorarioResponseLoga(coletaData) {
     return resposta;
 }
 
-function formatarRespostaListaPontoListaPonto(ponto) {
+function formatarRespostaListaPonto(ponto) {
     return {
         mensagem: `Encontrei o seguinte ecoponto próximo de você:\n\n*${ponto.nome}*\n\n${ponto.endereco}\nCep: ${ponto.cep}\n\n*${ponto.distanceInM.toFixed(0)} metro(s) de você.*\n\nTelefone: ${ponto.telefone}\nHorário de Funcionamento: ${ponto.horario_funcionamento}.\n\nItens aceitos: ${ponto.itens_recebidos.join(', ')}`,
         location: {
             lat: ponto.latitude,
             lng: ponto.longitude
         },
-        nome: ponto.nome
+        nome: ponto.nome,
+        ponto: ponto
     };
 }
