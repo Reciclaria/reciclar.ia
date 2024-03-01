@@ -5,6 +5,7 @@ const axios = require('axios'); // Para chamadas HTTP
 const OpenAI = require('openai');
 
 const admin = require('firebase-admin');
+const { toBase64 } = require("openai/core");
 admin.initializeApp();
 
 const OPENAI_API_KEY = defineString('OPENAI_API_KEY');
@@ -16,7 +17,36 @@ const TWILIO_MESSAGE_SERVICE_SID = defineString('TWILIO_MESSAGE_SERVICE_SID');
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() });
 
+const downloadTwilioMedia = async (mediaUrl) => {
 
+    const auth = `${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`;
+    const base64Auth = await toBase64(auth);
+    const headers = {
+        'Authorization': `Basic ${base64Auth}` 
+    }
+
+    // https://api.twilio.com/2010-04-01/Accounts/ACd1efbf440fe192f1a8439ecb9415de9c/Messages/MMb54485bb0503d1981af2711d2e9fb010/Media/ME8af513cafb93e0b566fafdf4b33cd964
+    
+    return await axios
+        .get(mediaUrl, {
+            responseType: 'arraybuffer',
+            // headers,
+            auth: {
+                username: TWILIO_ACCOUNT_SID.value(),
+                password: TWILIO_AUTH_TOKEN.value()
+            }
+        })
+        .then(response => {
+            const result = {
+                contentType: response.headers['content-type'],
+                base64: Buffer.from(response.data, 'binary').toString('base64')
+            }
+            return result;
+        }).catch(e => {
+            logger.error('ERROR!', e);
+            return null;
+        });
+}
 
 const activateStudio = async (to, json) => {
     const client = require('twilio')(TWILIO_ACCOUNT_SID.value(), TWILIO_AUTH_TOKEN.value());
@@ -38,8 +68,7 @@ const activateStudio = async (to, json) => {
 // Defina suas variáveis de ambiente no Firebase.
 
 exports.identificaLixo = onRequest(async (request, response) => {
-    logger.info("Processando requisição", {structuredData: true});
-    logger.info('Conteúdo da requisição', request.body);
+    logger.info('IDENTIFICAR IMAGEM', request.body);
 
     const imageUrl = request.body.url; // A URL da imagem enviada via Twilio.
     
@@ -51,7 +80,7 @@ exports.identificaLixo = onRequest(async (request, response) => {
 
     try {
         // Simulação de análise de imagem pela OpenAI. Substitua isso pela sua implementação real.
-        const aiResponse = await analyzeImageWithOpenAI(imageUrl, request.body.from);
+        const aiResponse = await analyzeImageWithOpenAI(imageUrl, request.body.from, request.body.to, request.body.profileName);
         activateStudio(request.body.to, aiResponse);
         response.status(200).send(JSON.stringify(aiResponse));
     } catch (error) {
@@ -228,30 +257,37 @@ exports.gerarDicaRandomica = onRequest(async (request, response) => {
 
 
 const getFirestorePrompt = async () => {    
-    const settings = await admin.firestore().collection('settings').doc('default').get();
-    if (settings.exists) {
-        settingsData = await settings.data();
-        logger.info('EXISTE', settingsData.promptImagem);
-        return settingsData.promptImagem;
-    }
-    return `Esta é a imagem de um lixo, faça uma análise completa e retorne um arquivo json seguinte formato:
-            
-    {
-        "objeto" : <nome do objeto>,
-        "material": <composição aproximada do material>,
-        "emoji_material" : <emoji que melhor representa o material>,
-        "tipo_de_descarte" : <"reciclavel", "lixo eletrônico", "compostagem", "descarte simples">,
-        "condicao_descarte" : <avisos sobre cuidados específicos para que o material possa ser descartado adequadamente">,
-        "reuso": <"sim", "não", "talvez">,
-        "possibilidades_criativas_de_reuso" : <uma ideia interessante para uso criativo e artistico>
-        "justificativa_talvez" :  <explique porque você esta em dúvida>
-    }
+    // const settings = await admin.firestore().collection('settings').doc('default').get();
+    // if (settings.exists) {
+    //     settingsData = await settings.data();
+    //     logger.info('EXISTE', settingsData.promptImagem);
+    //     return settingsData.promptImagem;
+    // }
 
-    Retorne APENAS o conteúdo do JSON de forma textual e nada mais. Deve ser um JSON válido.
-    `;
+    return `Esta é a imagem de um lixo, faça uma análise completa e retorne um arquivo json seguinte formato:  {     "objeto" : <nome do objeto ou objetos>,          "material": <composição aproximada do material ou materiais em formato de texto>,          "emoji_material" : <emoji que melhor representa o material em formato de texto>,          "tipo_de_descarte" : <"reciclável", "lixo eletrônico", "compostagem", "descarte simples">,          “potencial de reciclagem” : <“potencial de reciclagem do lixo e informações sobre o que pode ser gerado a partir da reciclagem do item”>          "condicao_descarte" : <avisos sobre cuidados específicos para que o lixo possa ser descartado adequadamente">,          "reuso": <"sim", "não", "talvez">,          "possibilidades_criativas_de_reuso" : <uma ideia interessante para uso criativo e artístico>           "justificativa_talvez" :  <explique porque você esta em dúvida>,     "ecoponto": <"raio-x", "cápsulas de café", "isopor", "sobras de poda de árvore", "cimento", "lixo eletrônico", "pilhas e baterias", "esponjas", "papel", "alumínio", "materiais volumosos", "metal", "lâmpadas", "entulho", "sandálias", "plástico", "móveis velhos", "restos de azulejos", "chinelos", "madeiras", "medicamentos", "resíduos da construção civil", "tecidos", "tijolo", "esponja", "óleo", "vidro", "Nenhum"> } Caso tenha mais de um material identificado, considere que os campos devem incluir todos eles e não crie um vetor. Caso seja parte de uma pessoa, foque no objeto que ela está usando ou que esteja em primeiro plano. Retorne APENAS o conteúdo do JSON de forma textual e nada mais. Deve ser um JSON válido.`;
+
+    // return `Esta é a imagem de um lixo, faça uma análise completa e retorne um arquivo json seguinte formato:
+            
+    // {
+    //     "objeto" : <nome do objeto>,
+    //     "material": <composição aproximada do material>,
+    //     "emoji_material" : <emoji que melhor representa o material>,
+    //     "tipo_de_descarte" : <"reciclavel", "lixo eletrônico", "compostagem", "descarte simples">,
+    //     "condicao_descarte" : <avisos sobre cuidados específicos para que o material possa ser descartado adequadamente">,
+    //     "reuso": <"sim", "não", "talvez">,
+    //     "possibilidades_criativas_de_reuso" : <uma ideia interessante para uso criativo e artistico>
+    //     "justificativa_talvez" :  <explique porque você esta em dúvida>
+    // }
+
+    // Retorne APENAS o conteúdo do JSON de forma textual e nada mais. Deve ser um JSON válido.
+    // `;
 }
 
-async function analyzeImageWithOpenAI(imageUrl,from) {
+async function analyzeImageWithOpenAI(imageUrl, from, to, profileName) {
+    const imageBase64 = await downloadTwilioMedia(imageUrl);
+
+    logger.info('imageBase64', imageBase64);
+
     const openAIResponse = await openai.chat.completions.create({
       model: "gpt-4-vision-preview",
       max_tokens: 2000,
@@ -263,7 +299,7 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
             {
               type: "image_url",
               image_url: {
-                "url": imageUrl,
+                "url": `data:${imageBase64.contentType};base64,${imageBase64.base64}`,
               },
             },
           ],
@@ -282,6 +318,8 @@ async function analyzeImageWithOpenAI(imageUrl,from) {
             messageResponse: openAIResponse.choices[0].message,
             response: response,
             from,
+            to,
+            profileName,
             imageUrl
         });
       
