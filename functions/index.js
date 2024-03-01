@@ -1,11 +1,13 @@
 const { onRequest } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const { defineString } = require('firebase-functions/params');
+
 const axios = require('axios'); // Para chamadas HTTP
 const OpenAI = require('openai');
 
 const admin = require('firebase-admin');
 const { toBase64 } = require("openai/core");
+const { AggregateField } = require("firebase-admin/firestore");
 admin.initializeApp();
 
 const OPENAI_API_KEY = defineString('OPENAI_API_KEY');
@@ -270,7 +272,8 @@ async function analyzeImageWithOpenAI(imageUrl, from, to, profileName) {
             from,
             to,
             profileName,
-            imageUrl
+            imageUrl,
+            usage: openAIResponse.usage
         });
       
         // Aqui você retornaria a resposta processada conforme necessário para seu uso.
@@ -292,6 +295,24 @@ async function analyzeImageWithOpenAI(imageUrl, from, to, profileName) {
     return response;
 }
 
+exports.uso = onRequest(async (request, response)=> {
+
+    if (request.query.password != 'uma palma') {
+        logger.error(`INVALID PASSWORD ${request.query.password}`);
+        return response.status('401').send('Acesso não permitido!');
+    }
+
+    // AggregateField.sum()
+    const doc = await admin.firestore().collection('logs').aggregate({
+        total_logs: AggregateField.count(),
+        tokens_total: AggregateField.sum('usage.total_tokens'),
+        tokens_average: AggregateField.average('usage.total_tokens')
+    }).get();
+
+    const data = doc.data();
+    logger.info('OPENAI USAGE', data);
+    response.contentType('application/json').send(JSON.stringify(data));
+});
 
 exports.fetchHorarioColeta = onRequest({
     timeoutSeconds: 10,
