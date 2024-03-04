@@ -16,6 +16,9 @@ const TWILIO_AUTH_TOKEN = defineString('TWILIO_AUTH_TOKEN');
 const TWILIO_STUDIO_FLOW_SID = defineString('TWILIO_STUDIO_FLOW_SID');
 const TWILIO_MESSAGE_SERVICE_SID = defineString('TWILIO_MESSAGE_SERVICE_SID');
 
+const MAX_REQUESTS_PER_USER = 10; // Limite de requisições por usuário
+let RESTRICTION_ACTIVE = true;
+
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() });
 
@@ -77,6 +80,15 @@ exports.identificaLixo = onRequest(async (request, response) => {
     if (!imageUrl) {
         logger.error('Nenhuma URL de imagem fornecida');
         response.status(400).send('Nenhuma URL de imagem fornecida');
+        return;
+    }
+
+    if (RESTRICTION_ACTIVE && !await checkAndUpdateRequestCounter(request.body.to)) {
+        // Se a restrição estiver ativa e o limite for atingido, retorne um erro
+        let msg = "Lamentamos, mas você atingiu seu limite atual de 10 solicitações. Estamos constantemente trabalhando para expandir nossos serviços e, em breve, ofereceremos opções ilimitadas. Agradecemos sua compreensão e paciência. Fique atento para atualizações futuras que permitirão que você aproveite ainda mais nosso serviço."
+        activateStudio(request.body.to, { "mensagem" : msg });
+        logger.info('Limite de requisições atingido', request.body.to);
+        response.status(200).send(msg);
         return;
     }
 
@@ -293,6 +305,26 @@ async function analyzeImageWithOpenAI(imageUrl, from, to, profileName) {
     }
 
     return response;
+}
+
+async function checkAndUpdateRequestCounter(userIdentifier) {
+    const userRef = admin.firestore().collection('requestCounters').doc(userIdentifier);
+    const doc = await userRef.get();
+
+    if (!doc.exists) {
+        logger.info(`FIRTS TIME `)
+        await userRef.set({ count: 1 }); // Se não existir, inicialize o contador
+        return true; // Primeira requisição, continue
+    } else {
+        let count = doc.data().count;
+        logger.info(`COUNT: ${count}`)
+        if (count >= MAX_REQUESTS_PER_USER) {
+            return false; // Limite atingido, bloqueie a requisição
+        } else {
+            await userRef.update({ count: count + 1 }); // Atualize o contador
+            return true; // Ainda dentro do limite, continue
+        }
+    }
 }
 
 exports.uso = onRequest(async (request, response)=> {
